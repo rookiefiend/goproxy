@@ -3,33 +3,35 @@ FROM golang:1.22-alpine3.19 AS build
 ARG USE_GORELEASER_ARTIFACTS=0
 
 WORKDIR /usr/local/src/goproxy
+ENV GOPROXY=https://goproxy.cn,direct
 COPY . .
 
 RUN set -eux; \
 	if [ $USE_GORELEASER_ARTIFACTS -eq 1 ]; then \
-		GOARCH=$(go env GOARCH); \
-		BIN_DIR=dist/goproxy_linux_$GOARCH; \
-		[ $GOARCH == "amd64" ] && BIN_DIR=${BIN_DIR}_v1; \
-		[ $GOARCH == "arm" ] && BIN_DIR=${BIN_DIR}_$(go env GOARM | cut -d , -f 1); \
-		cp -r $BIN_DIR bin; \
+	GOARCH=$(go env GOARCH); \
+	BIN_DIR=dist/goproxy_linux_$GOARCH; \
+	[ $GOARCH == "amd64" ] && BIN_DIR=${BIN_DIR}_v1; \
+	[ $GOARCH == "arm" ] && BIN_DIR=${BIN_DIR}_$(go env GOARM | cut -d , -f 1); \
+	cp -r $BIN_DIR bin; \
 	else \
-		apk add --no-cache git; \
-		go mod download; \
-		CGO_ENABLED=0 go build \
-			-trimpath \
-			-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
-			-o bin/ \
-			./cmd/goproxy; \
+	sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories; \
+	apk add --no-cache git; \
+	go mod download; \
+	CGO_ENABLED=0 GOPROXY=${GOPROXY} go build \
+	-trimpath \
+	-ldflags "-s -w -X github.com/goproxy/goproxy/cmd/goproxy/internal.Version=$(git describe --dirty --tags --always)" \
+	-o bin/ \
+	./cmd/goproxy; \
 	fi
 
 FROM alpine:3.19
 
 COPY --from=build /usr/local/src/goproxy/bin/ /usr/local/bin/
 
-RUN apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.ustc.edu.cn/g' /etc/apk/repositories && apk add --no-cache go git git-lfs openssh gpg subversion fossil mercurial breezy
 RUN git lfs install
 
-USER nobody
+USER 0:0
 WORKDIR /go
 VOLUME /go
 WORKDIR /goproxy
