@@ -22,6 +22,11 @@ type s3Cacher struct {
 	partSize int64
 }
 
+// Sync implements goproxy.Cacher.
+func (s3c *s3Cacher) Sync(ctx context.Context, uploadCacheDirReader io.Reader, compressType string) error {
+	panic("unimplemented")
+}
+
 // s3CacherOptions is the options for creating a new [s3Cacher].
 type s3CacherOptions struct {
 	accessKeyID     string

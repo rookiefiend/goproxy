@@ -111,7 +111,14 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 	g.initOnce.Do(g.init)
 
 	switch req.Method {
+	case http.MethodPost:
+		g.serveSync(rw, req)
+		return
 	case http.MethodGet, http.MethodHead:
+		if req.URL.Path == "/" {
+			g.uploadPage(rw, req)
+			return
+		}
 	default:
 		responseMethodNotAllowed(rw, req, 86400)
 		return
@@ -129,6 +136,98 @@ func (g *Goproxy) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 	g.serveFetch(rw, req, target)
+}
+
+func (g *Goproxy) uploadPage(rw http.ResponseWriter, req *http.Request) {
+	const UPLOAD_PAGE_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>文件上传</title>
+</head>
+<body>
+    <h1>文件上传</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="fileInput" name="file">
+        <button type="submit">上传文件</button>
+    </form>
+
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+            if (!file) {
+                alert('请选择要上传的文件');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            fetch('/upload', {
+                method: 'POST',
+                body: formData,
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.text();
+                } else {
+                	return response.text().then(text => {
+               		 	throw new Error("服务器处理出错, error = " + text);
+            		});
+                }
+            })
+            .then(data => {
+                document.getElementById('result').innerHTML = data;
+            })
+            .catch(error => {
+                console.error('上传文件时出错:', error);
+                document.getElementById('result').innerText = '上传文件时出错, error = ' + error;
+            });
+        });
+    </script>
+</body>
+</html>
+	`
+	rw.WriteHeader(http.StatusOK)
+	rw.Header().Set("Content-Type", "text/html")
+	fmt.Fprint(rw, UPLOAD_PAGE_HTML)
+}
+
+func (g *Goproxy) serveSync(rw http.ResponseWriter, req *http.Request) {
+	// 解析multipart表单，但不会解析文件内容
+	if err := req.ParseMultipartForm(10 << 20); err != nil {
+		g.logErrorf("failed to parsing multipartForm, %v", err)
+		responseError(rw, req, err, true)
+		return
+	}
+
+	for _, fileHeaders := range req.MultipartForm.File {
+		for _, fileHeader := range fileHeaders {
+			// 打开上传的文件
+			file, err := fileHeader.Open()
+			if err != nil {
+				g.logErrorf("failed to parsing multipartForm, %v", err)
+				responseError(rw, req, err, true)
+				return
+			}
+			if g.Cacher == nil {
+				responseString(rw, req, http.StatusOK, 86400, "cacher is nil")
+			}
+			g.logErrorf("failed to sync upload file %s, %v", fileHeader.Filename, err)
+			responseError(rw, req, err, true)
+			return
+			err = g.Cacher.Sync(req.Context(), file, fileHeader.Header.Get("Content-Type"))
+			if err != nil {
+				return
+			}
+		}
+	}
+	responseString(rw, req, http.StatusOK, 86400, `sync upload file success`)
 }
 
 // serveFetch serves fetch requests.

@@ -126,6 +126,36 @@ docker run ghcr.io/goproxy/goproxy --help
 
 </details>
 
+## Usage
+
+### 手动上传依赖
+
+1. 有网构建工程，下载依赖
+
+	在有网环境中，构建简单的 go module 项目，通过 import 导入所需依赖，然后通过 go mod tidy 下载依赖到本机的 `go env GOMODCACHE` 目录之下
+
+2. 打包依赖
+
+	通过以下代码打包依赖
+	```bash
+	tar -zcf download.tar.gz -C $(go env OMODCACHE)/cache/download .
+	```
+
+3. 拷贝依赖包到无网环境
+4. 上传依赖包
+   1. 通过界面上传
+      
+	  访问 `goproxy` 程序的 / 路径，通过界面选择文件进行上传即可
+
+   2. 通过 `curl` 上传
+      
+	  示例代码如下
+		```bash
+		filePath=/home/test/download.tar.gz # 设置要上传文件路径
+		proxyServer=http://localhost:8080/ # 代理地址
+		curl --request POST --url ${proxyServer} --header 'content-type: multipart/	form-data' -F "file=@${filePath};type=file -b --mime-type ${filePath}"
+		```
+
 ## Community
 
 If you have any questions or ideas about this project, feel free to discuss them

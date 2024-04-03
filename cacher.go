@@ -1,11 +1,14 @@
 package goproxy
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Cacher defines a set of intuitive methods used to cache module files for [Goproxy].
@@ -31,6 +34,8 @@ type Cacher interface {
 
 	// Put puts a cache for the name with the content.
 	Put(ctx context.Context, name string, content io.ReadSeeker) error
+	// Sync sync upload cache dir to loacl cached dir
+	Sync(ctx context.Context, uploadCacheDirReader io.Reader, compressType string) error
 }
 
 // DirCacher implements [Cacher] using a directory on the local disk. If the
@@ -46,6 +51,7 @@ func (dc DirCacher) Get(ctx context.Context, name string) (io.ReadCloser, error)
 	}
 	fi, err := f.Stat()
 	if err != nil {
+		f.Close()
 		return nil, err
 	}
 	return &struct {
@@ -78,4 +84,64 @@ func (dc DirCacher) Put(ctx context.Context, name string, content io.ReadSeeker)
 		return err
 	}
 	return os.Rename(f.Name(), file)
+}
+
+func (dc DirCacher) putNoSeeker(_ context.Context, name string, content io.Reader) error {
+	file := filepath.Join(string(dc), filepath.FromSlash(name))
+	dir := filepath.Dir(file)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	f, err := os.CreateTemp(dir, fmt.Sprintf(".%s.tmp.*", filepath.Base(file)))
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := io.Copy(f, content); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Chmod(f.Name(), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), file)
+}
+
+// Sync sync upload cache dir to loacl cached dir
+func (dc DirCacher) Sync(ctx context.Context, uploadCacheDirReader io.Reader, compressType string) (err error) {
+	switch compressType {
+	case "application/gzip":
+		gzipReader, err := gzip.NewReader(uploadCacheDirReader)
+		if err != nil {
+			return err
+		}
+		defer gzipReader.Close()
+		uploadCacheDirReader = gzipReader
+		fallthrough
+	case "application/x-tar":
+		tarReader := tar.NewReader(uploadCacheDirReader)
+		// 遍历tar文件中的每个文件并解压到目标目录
+		for {
+			header, err := tarReader.Next()
+			if err == io.EOF {
+				break // 结束循环
+			}
+			if err != nil {
+				return err
+			}
+			if header.FileInfo().IsDir() || strings.HasSuffix(header.Name, ".lock") {
+				continue
+			}
+			err = dc.putNoSeeker(ctx, header.Name, tarReader)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return fmt.Errorf("not support %s type cached dir", compressType)
 }
