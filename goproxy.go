@@ -218,9 +218,6 @@ func (g *Goproxy) serveSync(rw http.ResponseWriter, req *http.Request) {
 			if g.Cacher == nil {
 				responseString(rw, req, http.StatusOK, 86400, "cacher is nil")
 			}
-			g.logErrorf("failed to sync upload file %s, %v", fileHeader.Filename, err)
-			responseError(rw, req, err, true)
-			return
 			err = g.Cacher.Sync(req.Context(), file, fileHeader.Header.Get("Content-Type"))
 			if err != nil {
 				return
