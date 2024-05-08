@@ -126,9 +126,15 @@ docker run ghcr.io/goproxy/goproxy --help
 
 </details>
 
-## Usage
+## Modify
 
-### 手动上传依赖
+此工程改造了原始`goproxy`，增加了通过文件上传依赖功能，为其添加了`/*` `POST`接口，可通过任意`HTTP`路径，采用`POST`方法上传依赖文件，具体代码位于`goproxy.go`文件中的`serveSync`方法之中，可查询此方法进行修改。
+
+若需重新编译并制作镜像，可在有网环境下执行`docker build -t goproxy:v0.16-upload .`命令制作镜像，然后进行使用。
+
+### Usage
+
+#### 手动上传依赖
 
 1. 有网构建工程，下载依赖
 
@@ -137,6 +143,7 @@ docker run ghcr.io/goproxy/goproxy --help
 2. 打包依赖
 
 	通过以下代码打包依赖
+
 	```bash
 	tar -zcf download.tar.gz -C $(go env OMODCACHE)/cache/download .
 	```
@@ -150,6 +157,7 @@ docker run ghcr.io/goproxy/goproxy --help
    2. 通过 `curl` 上传
       
 	  示例代码如下
+
 		```bash
 		filePath=/home/test/download.tar.gz # 设置要上传文件路径
 		proxyServer=http://localhost:8080/ # 代理地址
